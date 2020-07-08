@@ -7,7 +7,8 @@ export default [
             1: 'Default',
             2: 'Near',
             3: 'Overhead',
-            4: 'Map'
+            4: 'Map',
+            5: 'CameraView',
         },
         supportInOfflineView: true,
     },
@@ -29,6 +30,9 @@ export default [
             perceptionId: 'Id',
             perceptionObstacleInfo: 'Distance and Speed',
             perceptionLaneMarker: 'Lane Marker',
+            perceptionLidarSensor: 'Lidar Sensor',
+            perceptionRadarSensor: 'Radar Sensor',
+            perceptionCameraSensor: 'Camera Sensor',
         },
         supportInOfflineView: true,
     }, {
@@ -38,6 +42,7 @@ export default [
         data: {
             predictionMajor: 'Major Prediction Line',
             predictionMinor: 'Minor Prediction Line',
+            predictionGaussianInfo: 'Gaussian Info',
             predictionPriority: 'Priority'
         },
         supportInOfflineView: true,
@@ -91,6 +96,7 @@ export default [
             mapRoad: 'Road',
             mapSignal: 'Signal',
             mapStopSign: 'Stop Sign',
+            mapYield: 'Yield Sign',
             mapSpeedBump: 'Speed Bump',
             mapParkingSpace: 'Parking Space',
             mapLaneId: 'Lane Id'

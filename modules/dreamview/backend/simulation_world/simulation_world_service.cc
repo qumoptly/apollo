@@ -18,6 +18,7 @@
 
 #include <unordered_set>
 
+#include "absl/strings/str_split.h"
 #include "cyber/common/file.h"
 #include "google/protobuf/util/json_util.h"
 #include "modules/canbus/proto/chassis.pb.h"
@@ -47,7 +48,6 @@ using apollo::common::VehicleConfigHelper;
 using apollo::common::monitor::MonitorMessage;
 using apollo::common::monitor::MonitorMessageItem;
 using apollo::common::time::Clock;
-using apollo::common::time::millis;
 using apollo::common::util::DownsampleByAngle;
 using apollo::common::util::FillHeader;
 using apollo::control::ControlCommand;
@@ -59,6 +59,8 @@ using apollo::localization::Gps;
 using apollo::localization::LocalizationEstimate;
 using apollo::perception::PerceptionObstacle;
 using apollo::perception::PerceptionObstacles;
+using apollo::perception::SensorMeasurement;
+using apollo::perception::TrafficLight;
 using apollo::perception::TrafficLightDetection;
 using apollo::planning::ADCTrajectory;
 using apollo::planning::DecisionResult;
@@ -71,6 +73,7 @@ using apollo::relative_map::MapMsg;
 using apollo::relative_map::NavigationInfo;
 using apollo::routing::RoutingRequest;
 using apollo::routing::RoutingResponse;
+using apollo::storytelling::Stories;
 
 using Json = nlohmann::json;
 using ::google::protobuf::util::MessageToJsonString;
@@ -125,12 +128,14 @@ Object::DisengageType DeduceDisengageType(const Chassis &chassis) {
   }
 }
 
-void SetObstacleType(const PerceptionObstacle &obstacle, Object *world_object) {
+void SetObstacleType(const PerceptionObstacle::Type obstacle_type,
+                     const PerceptionObstacle::SubType obstacle_subtype,
+                     Object *world_object) {
   if (world_object == nullptr) {
     return;
   }
 
-  switch (obstacle.type()) {
+  switch (obstacle_type) {
     case PerceptionObstacle::UNKNOWN:
       world_object->set_type(Object_Type_UNKNOWN);
       break;
@@ -153,7 +158,7 @@ void SetObstacleType(const PerceptionObstacle &obstacle, Object *world_object) {
       world_object->set_type(Object_Type_VIRTUAL);
   }
 
-  world_object->set_sub_type(obstacle.sub_type());
+  world_object->set_sub_type(obstacle_subtype);
 }
 
 void SetStopReason(const StopReasonCode &reason_code, Decision *decision) {
@@ -208,7 +213,7 @@ void UpdateTurnSignal(const apollo::common::VehicleSignal &signal,
 }
 
 void DownsampleCurve(Curve *curve) {
-  if (curve->segment_size() == 0) {
+  if (curve->segment().empty()) {
     return;
   }
 
@@ -274,6 +279,7 @@ void SimulationWorldService::InitReaders() {
   navigation_reader_ =
       node_->CreateReader<NavigationInfo>(FLAGS_navigation_topic);
   relative_map_reader_ = node_->CreateReader<MapMsg>(FLAGS_relative_map_topic);
+  storytelling_reader_ = node_->CreateReader<Stories>(FLAGS_storytelling_topic);
 
   drive_event_reader_ = node_->CreateReader<DriveEvent>(
       FLAGS_drive_event_topic,
@@ -327,7 +333,10 @@ void SimulationWorldService::Update() {
     world_.Clear();
     *world_.mutable_auto_driving_car() = car;
 
-    route_paths_.clear();
+    {
+      boost::unique_lock<boost::shared_mutex> writer_lock(route_paths_mutex_);
+      route_paths_.clear();
+    }
 
     to_clear_ = false;
   }
@@ -347,6 +356,8 @@ void SimulationWorldService::Update() {
   // may not always be perfectly aligned and belong to the same frame.
   obj_map_.clear();
   world_.clear_object();
+  world_.clear_sensor_measurements();
+  UpdateWithLatestObserved(storytelling_reader_.get());
   UpdateWithLatestObserved(perception_obstacle_reader_.get());
   UpdateWithLatestObserved(perception_traffic_light_reader_.get(), false);
   UpdateWithLatestObserved(prediction_obstacle_reader_.get());
@@ -364,8 +375,7 @@ void SimulationWorldService::Update() {
   UpdateLatencies();
 
   world_.set_sequence_num(world_.sequence_num() + 1);
-  world_.set_timestamp(
-      static_cast<double>(apollo::common::time::AsInt64<millis>(Clock::Now())));
+  world_.set_timestamp(static_cast<double>(absl::ToUnixMillis(Clock::Now())));
 }
 
 void SimulationWorldService::UpdateDelays() {
@@ -407,7 +417,7 @@ Json SimulationWorldService::GetUpdateAsJson(double radius) const {
 
   Json update;
   update["type"] = "SimWorldUpdate";
-  update["timestamp"] = apollo::common::time::AsInt64<millis>(Clock::Now());
+  update["timestamp"] = absl::ToUnixMillis(Clock::Now());
   update["world"] = sim_world_json_string;
 
   return update;
@@ -455,7 +465,6 @@ void SimulationWorldService::UpdateSimulationWorld(
   // message header. It is done on both the SimulationWorld object
   // itself and its auto_driving_car() field.
   auto_driving_car->set_timestamp_sec(localization.header().timestamp_sec());
-
   ready_to_push_.store(true);
 }
 
@@ -520,6 +529,22 @@ void SimulationWorldService::UpdateSimulationWorld(const Chassis &chassis) {
   auto_driving_car->set_disengage_type(DeduceDisengageType(chassis));
 }
 
+template <>
+void SimulationWorldService::UpdateSimulationWorld(const Stories &stories) {
+  world_.clear_stories();
+  auto *world_stories = world_.mutable_stories();
+
+  const google::protobuf::Descriptor *descriptor = stories.GetDescriptor();
+  const google::protobuf::Reflection *reflection = stories.GetReflection();
+  const int field_count = descriptor->field_count();
+  for (int i = 0; i < field_count; ++i) {
+    const google::protobuf::FieldDescriptor *field = descriptor->field(i);
+    if (field->name() != "header") {
+      (*world_stories)[field->name()] = reflection->HasField(stories, field);
+    }
+  }
+}
+
 Object &SimulationWorldService::CreateWorldObjectIfAbsent(
     const PerceptionObstacle &obstacle) {
   const std::string id = std::to_string(obstacle.id());
@@ -529,9 +554,22 @@ Object &SimulationWorldService::CreateWorldObjectIfAbsent(
     Object &world_obj = obj_map_[id];
     SetObstacleInfo(obstacle, &world_obj);
     SetObstaclePolygon(obstacle, &world_obj);
-    SetObstacleType(obstacle, &world_obj);
+    SetObstacleType(obstacle.type(), obstacle.sub_type(), &world_obj);
+    SetObstacleSensorMeasurements(obstacle, &world_obj);
   }
   return obj_map_[id];
+}
+
+void SimulationWorldService::CreateWorldObjectFromSensorMeasurement(
+    const SensorMeasurement &sensor, Object *world_object) {
+  world_object->set_id(std::to_string(sensor.id()));
+  world_object->set_position_x(sensor.position().x());
+  world_object->set_position_y(sensor.position().y());
+  world_object->set_heading(sensor.theta());
+  world_object->set_length(sensor.length());
+  world_object->set_width(sensor.width());
+  world_object->set_height(sensor.height());
+  SetObstacleType(sensor.type(), sensor.sub_type(), world_object);
 }
 
 void SimulationWorldService::SetObstacleInfo(const PerceptionObstacle &obstacle,
@@ -579,6 +617,18 @@ void SimulationWorldService::SetObstaclePolygon(
   }
 }
 
+void SimulationWorldService::SetObstacleSensorMeasurements(
+    const PerceptionObstacle &obstacle, Object *world_object) {
+  if (world_object == nullptr) {
+    return;
+  }
+  for (const auto &sensor : obstacle.measurements()) {
+    Object *obj = (*(world_.mutable_sensor_measurements()))[sensor.sensor_id()]
+                      .add_sensor_measurement();
+    CreateWorldObjectFromSensorMeasurement(sensor, obj);
+  }
+}
+
 template <>
 void SimulationWorldService::UpdateSimulationWorld(
     const PerceptionObstacles &obstacles) {
@@ -602,8 +652,7 @@ void SimulationWorldService::UpdateSimulationWorld(
   for (const auto &traffic_light : traffic_light_detection.traffic_light()) {
     Object *signal = world_.add_perceived_signal();
     signal->set_id(traffic_light.id());
-    signal->set_current_signal(
-      apollo::perception::TrafficLight_Color_Name(traffic_light.color()));
+    signal->set_current_signal(TrafficLight_Color_Name(traffic_light.color()));
   }
 }
 
@@ -816,15 +865,15 @@ void SimulationWorldService::UpdateDecision(const DecisionResult &decision_res,
           if (decision.has_stop()) {
             // flag yielded obstacles
             for (auto obstacle_id : decision.stop().wait_for_obstacle()) {
-              std::vector<std::string> id_segments;
-              apollo::common::util::Split(obstacle_id, '_', &id_segments);
+              const std::vector<std::string> id_segments =
+                  absl::StrSplit(obstacle_id, '_');
               if (id_segments.size() > 0) {
                 obj_map_[id_segments[0]].set_yielded_obstacle(true);
               }
             }
           }
         } else if (decision.has_nudge()) {
-          if (world_obj.polygon_point_size() == 0) {
+          if (world_obj.polygon_point().empty()) {
             if (world_obj.type() == Object_Type_VIRTUAL) {
               AWARN << "No current perception object with id=" << id
                     << " for nudge decision";
@@ -948,20 +997,38 @@ void SimulationWorldService::UpdatePlanningData(const PlanningData &data) {
   }
 
   // Update pull over status
-  planning_data->clear_pull_over_status();
-  if (data.has_pull_over_status()) {
-    planning_data->mutable_pull_over_status()->CopyFrom(
-        data.pull_over_status());
+  planning_data->clear_pull_over();
+  if (data.has_pull_over()) {
+    planning_data->mutable_pull_over()->CopyFrom(data.pull_over());
   }
 
   // Update planning signal
-  // TODO(zhangqian): check with planning to decide a reasonable signal
   world_.clear_traffic_signal();
-  if (data.has_signal_light() &&
-      data.signal_light().signal_size() > 0) {
+  if (data.has_signal_light() && data.signal_light().signal_size() > 0) {
+    TrafficLight::Color current_signal = TrafficLight::UNKNOWN;
+    int green_light_count = 0;
+
+    for (auto &signal : data.signal_light().signal()) {
+      switch (signal.color()) {
+        case TrafficLight::RED:
+        case TrafficLight::YELLOW:
+        case TrafficLight::BLACK:
+          current_signal = signal.color();
+          break;
+        case TrafficLight::GREEN:
+          green_light_count++;
+          break;
+        default:
+          break;
+      }
+    }
+
+    if (green_light_count == data.signal_light().signal_size()) {
+      current_signal = TrafficLight::GREEN;
+    }
+
     world_.mutable_traffic_signal()->set_current_signal(
-      apollo::perception::TrafficLight_Color_Name(
-        data.signal_light().signal(0).color()));
+        TrafficLight_Color_Name(current_signal));
   }
 }
 
@@ -1001,6 +1068,17 @@ void SimulationWorldService::CreatePredictionTrajectory(
       PolygonPoint *world_point = prediction->add_predicted_trajectory();
       world_point->set_x(point.x() + map_service_->GetXOffset());
       world_point->set_y(point.y() + map_service_->GetYOffset());
+
+      const TrajectoryPoint &traj_point = traj.trajectory_point(index);
+      if (traj_point.has_gaussian_info()) {
+        const apollo::common::GaussianInfo &gaussian =
+            traj_point.gaussian_info();
+
+        auto *ellipse = world_point->mutable_gaussian_info();
+        ellipse->set_ellipse_a(gaussian.ellipse_a());
+        ellipse->set_ellipse_b(gaussian.ellipse_b());
+        ellipse->set_theta_a(gaussian.theta_a());
+      }
     }
   }
 }
@@ -1031,10 +1109,13 @@ void SimulationWorldService::UpdateSimulationWorld(
 template <>
 void SimulationWorldService::UpdateSimulationWorld(
     const RoutingResponse &routing_response) {
-  if (world_.has_routing_time() &&
-      world_.routing_time() == routing_response.header().timestamp_sec()) {
-    // This routing response has been processed.
-    return;
+  {
+    boost::shared_lock<boost::shared_mutex> reader_lock(route_paths_mutex_);
+    if (world_.has_routing_time() &&
+        world_.routing_time() == routing_response.header().timestamp_sec()) {
+      // This routing response has been processed.
+      return;
+    }
   }
 
   std::vector<Path> paths;
@@ -1043,16 +1124,15 @@ void SimulationWorldService::UpdateSimulationWorld(
   }
 
   world_.clear_route_path();
-  route_paths_.clear();
-  world_.set_routing_time(routing_response.header().timestamp_sec());
 
+  std::vector<RoutePath> route_paths;
   for (const Path &path : paths) {
     // Downsample the path points for frontend display.
     auto sampled_indices =
         DownsampleByAngle(path.path_points(), kAngleThreshold);
 
-    route_paths_.emplace_back();
-    RoutePath *route_path = &route_paths_.back();
+    route_paths.emplace_back();
+    RoutePath *route_path = &route_paths.back();
     for (const size_t index : sampled_indices) {
       const auto &path_point = path.path_points()[index];
       PolygonPoint *route_point = route_path->add_point();
@@ -1066,15 +1146,23 @@ void SimulationWorldService::UpdateSimulationWorld(
       *new_path = *route_path;
     }
   }
+  {
+    boost::unique_lock<boost::shared_mutex> writer_lock(route_paths_mutex_);
+    std::swap(route_paths, route_paths_);
+    world_.set_routing_time(routing_response.header().timestamp_sec());
+  }
 }
 
 Json SimulationWorldService::GetRoutePathAsJson() const {
   Json response;
-  response["routingTime"] = world_.routing_time();
   response["routePath"] = Json::array();
-  // TODO(simulation): there might be a race if there are multiple
-  // RoutingResponse arrived at the same time.
-  for (const auto &route_path : route_paths_) {
+  std::vector<RoutePath> route_paths;
+  {
+    boost::shared_lock<boost::shared_mutex> reader_lock(route_paths_mutex_);
+    response["routingTime"] = world_.routing_time();
+    route_paths = route_paths_;
+  }
+  for (const auto &route_path : route_paths) {
     Json path;
     path["point"] = Json::array();
     for (const auto &route_point : route_path.point()) {

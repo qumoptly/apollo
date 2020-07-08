@@ -16,9 +16,11 @@
 
 #pragma once
 
+#include <mutex>
 #include <string>
 #include <vector>
 
+#include "modules/prediction/container/obstacles/obstacle.h"
 #include "modules/prediction/proto/offline_features.pb.h"
 #include "modules/prediction/proto/prediction_obstacle.pb.h"
 
@@ -72,10 +74,12 @@ class FeatureOutput {
    * @brief Insert a prediction result with predicted trajectories
    * @param Obstacle id
    * @param prediction_obstacle
+   * @param obstacle_conf
+   * @param scenario
    */
   static void InsertPredictionResult(
-      const int obstacle_id, const PredictionObstacle& prediction_obstacle,
-      const ObstacleConf& obstacle_conf);
+      const Obstacle* obstacle, const PredictionObstacle& prediction_obstacle,
+      const ObstacleConf& obstacle_conf, const Scenario& scenario);
 
   /**
    * @brief Insert a frame env
@@ -162,6 +166,7 @@ class FeatureOutput {
   static std::size_t idx_frame_env_;
   static ListDataForTuning list_data_for_tuning_;
   static std::size_t idx_tuning_;
+  static std::mutex mutex_feature_;
 };
 
 }  // namespace prediction

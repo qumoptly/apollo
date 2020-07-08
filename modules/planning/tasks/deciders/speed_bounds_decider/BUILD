@@ -4,12 +4,8 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "speed_bounds_decider",
-    srcs = [
-        "speed_bounds_decider.cc",
-    ],
-    hdrs = [
-        "speed_bounds_decider.h",
-    ],
+    srcs = ["speed_bounds_decider.cc"],
+    hdrs = ["speed_bounds_decider.h"],
     copts = ["-DMODULE_NAME=\\\"planning\\\""],
     deps = [
         ":st_boundary_mapper",
@@ -42,6 +38,7 @@ cc_library(
         "//modules/common/status",
         "//modules/map/pnc_map",
         "//modules/map/proto:map_proto",
+        "//modules/planning/common:dependency_injector",
         "//modules/planning/common:frame",
         "//modules/planning/common:obstacle",
         "//modules/planning/common:path_decision",
@@ -54,35 +51,15 @@ cc_library(
         "//modules/planning/common/trajectory:discretized_trajectory",
         "//modules/planning/proto:planning_config_proto",
         "//modules/planning/proto:planning_proto",
-        "//modules/planning/proto:speed_bounds_decider_config_proto",
+        "//modules/planning/proto:task_config_proto",
         "//modules/planning/reference_line",
-    ],
-)
-
-cc_test(
-    name = "speed_limit_decider_test",
-    size = "small",
-    srcs = [
-        "speed_limit_decider_test.cc",
-    ],
-    data = [
-        "//modules/planning:planning_testdata",
-    ],
-    deps = [
-        ":st_boundary_mapper",
-        "//cyber/common:log",
-        "//modules/common/time",
-        "//modules/common/util",
-        "@gtest//:main",
     ],
 )
 
 cc_test(
     name = "st_boundary_mapper_test",
     size = "small",
-    srcs = [
-        "st_boundary_mapper_test.cc",
-    ],
+    srcs = ["st_boundary_mapper_test.cc"],
     data = [
         "//modules/planning:planning_testdata",
     ],
@@ -91,7 +68,7 @@ cc_test(
         "//cyber/common:log",
         "//modules/common/time",
         "//modules/common/util",
-        "@gtest//:main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

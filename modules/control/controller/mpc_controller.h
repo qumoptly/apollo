@@ -26,12 +26,11 @@
 #include <string>
 
 #include "Eigen/Core"
-
 #include "modules/common/configs/proto/vehicle_config.pb.h"
-
 #include "modules/common/filters/digital_filter.h"
 #include "modules/common/filters/digital_filter_coefficients.h"
 #include "modules/common/filters/mean_filter.h"
+#include "modules/common/math/mpc_osqp.h"
 #include "modules/control/common/interpolation_1d.h"
 #include "modules/control/common/interpolation_2d.h"
 #include "modules/control/common/trajectory_analyzer.h"
@@ -66,7 +65,8 @@ class MPCController : public Controller {
    * @param control_conf control configurations
    * @return Status initialization status
    */
-  common::Status Init(const ControlConf *control_conf) override;
+  common::Status Init(std::shared_ptr<DependencyInjector> injector,
+                      const ControlConf *control_conf) override;
 
   /**
    * @brief compute steering target and throttle/ brake based on current vehicle
@@ -275,9 +275,11 @@ class MPCController : public Controller {
   // term for steering control
   bool enable_mpc_feedforward_compensation_ = false;
 
-  // Limitation for judging if the unconstraint analytical control is close
+  // Limitation for judging if the unconstrained analytical control is close
   // enough to the solver's output with constraint
-  double unconstraint_control_diff_limit_ = 5.0;
+  double unconstrained_control_diff_limit_ = 5.0;
+
+  std::shared_ptr<DependencyInjector> injector_;
 };
 
 }  // namespace control

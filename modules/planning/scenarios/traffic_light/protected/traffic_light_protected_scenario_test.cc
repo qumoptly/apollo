@@ -18,8 +18,6 @@
  * @file
  **/
 
-#define protected public
-#define private public
 #include "modules/planning/scenarios/traffic_light/protected/traffic_light_protected_scenario.h"
 
 #include "gtest/gtest.h"
@@ -41,7 +39,7 @@ class TrafficLightProtectedScenarioTest : public ::testing::Test {
   std::unique_ptr<TrafficLightProtectedScenario> scenario_;
 };
 
-TEST_F(TrafficLightProtectedScenarioTest, VerifyConf) {
+TEST_F(TrafficLightProtectedScenarioTest, Init) {
   FLAGS_scenario_traffic_light_protected_config_file =
       "/apollo/modules/planning/conf/"
       "scenario/traffic_light_protected_config.pb.txt";
@@ -49,19 +47,11 @@ TEST_F(TrafficLightProtectedScenarioTest, VerifyConf) {
   ScenarioConfig config;
   EXPECT_TRUE(apollo::cyber::common::GetProtoFromFile(
       FLAGS_scenario_traffic_light_protected_config_file, &config));
-}
-
-TEST_F(TrafficLightProtectedScenarioTest, Init) {
-  FLAGS_scenario_traffic_light_protected_config_file =
-      "/apollo/modules/planning/testdata/conf/"
-      "scenario/traffic_light_protected_config.pb.txt";
-
-  ScenarioConfig config;
-  EXPECT_TRUE(apollo::cyber::common::GetProtoFromFile(
-      FLAGS_scenario_traffic_light_protected_config_file, &config));
 
   ScenarioContext context;
-  scenario_.reset(new TrafficLightProtectedScenario(config, &context));
+  auto injector = std::make_shared<DependencyInjector>();
+  scenario_.reset(new TrafficLightProtectedScenario(config, &context,
+                                                    injector));
   EXPECT_EQ(scenario_->scenario_type(),
             ScenarioConfig::TRAFFIC_LIGHT_PROTECTED);
 }

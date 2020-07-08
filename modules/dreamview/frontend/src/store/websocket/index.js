@@ -2,6 +2,8 @@ import OfflinePlaybackWebSocketEndpoint from "store/websocket/websocket_offline"
 import RealtimeWebSocketEndpoint from "store/websocket/websocket_realtime";
 import MapDataWebSocketEndpoint from "store/websocket/websocket_map";
 import PointCloudWebSocketEndpoint from "store/websocket/websocket_point_cloud";
+import CameraDataWebSocketEndpoint from "store/websocket/websocket_camera";
+import TeleopWebSocketEndpoint from "store/websocket/websocket_teleop";
 
 // Returns the websocket server address based on the web server address.
 // Follows the convention that the websocket is served on the same host/port
@@ -25,6 +27,12 @@ function deduceWebsocketServerAddr(type) {
         case "sim_world":
             path = OFFLINE_PLAYBACK ? "offlineView" : "websocket";
             break;
+        case "camera":
+            path = "camera";
+            break;
+        case "teleop":
+            path = "teleop";
+            break;
     }
     return `${protocol}://${link.hostname}:${port}/${path}`;
 }
@@ -33,13 +41,22 @@ function deduceWebsocketServerAddr(type) {
 // invoked in production mode ("-p"). We rely on this to determine which
 // websocket server to use.
 const simWorldServerAddr = deduceWebsocketServerAddr("sim_world");
-const WS = OFFLINE_PLAYBACK
-    ? new OfflinePlaybackWebSocketEndpoint(simWorldServerAddr)
-    : new RealtimeWebSocketEndpoint(simWorldServerAddr);
-export default WS;
 
 const mapServerAddr = deduceWebsocketServerAddr("map");
 export const MAP_WS = new MapDataWebSocketEndpoint(mapServerAddr);
 
 const pointCloudServerAddr = deduceWebsocketServerAddr("point_cloud");
 export const POINT_CLOUD_WS = new PointCloudWebSocketEndpoint(pointCloudServerAddr);
+
+const cameraServerAddr = deduceWebsocketServerAddr("camera");
+export const CAMERA_WS = new CameraDataWebSocketEndpoint(cameraServerAddr);
+
+const WS = OFFLINE_PLAYBACK
+    ? new OfflinePlaybackWebSocketEndpoint(simWorldServerAddr)
+    : new RealtimeWebSocketEndpoint(simWorldServerAddr);
+
+WS.setPointCloudWS(POINT_CLOUD_WS);
+export default WS;
+
+const teleopServerAddr = deduceWebsocketServerAddr("teleop");
+export const TELEOP_WS = new TeleopWebSocketEndpoint(teleopServerAddr);

@@ -1,5 +1,7 @@
 load("//tools:cpplint.bzl", "cpplint")
 
+load("//tools:py_proto.bzl", "py_proto")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
@@ -18,9 +20,12 @@ cc_proto_library(
 
 proto_library(
     name = "image_decompress_proto_lib",
-    srcs = [
-        "config.proto",
-    ],
+    srcs = ["config.proto"],
+)
+
+py_proto(
+    name = "config_pb2",
+    src = "config.proto",
 )
 
 cpplint()

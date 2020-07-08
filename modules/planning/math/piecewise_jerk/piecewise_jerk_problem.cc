@@ -16,10 +16,7 @@
 
 #include "modules/planning/math/piecewise_jerk/piecewise_jerk_problem.h"
 
-#include <algorithm>
-
 #include "cyber/common/log.h"
-
 #include "modules/planning/common/planning_gflags.h"
 
 namespace apollo {
@@ -47,6 +44,8 @@ PiecewiseJerkProblem::PiecewiseJerkProblem(
 
   ddx_bounds_.resize(num_of_knots_,
                      std::make_pair(-kMaxVariableRange, kMaxVariableRange));
+
+  weight_x_ref_vec_ = std::vector<double>(num_of_knots_, 0.0);
 }
 
 OSQPData* PiecewiseJerkProblem::FormulateProblem() {
@@ -251,7 +250,8 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
       ++ind_p;
     }
   }
-  // TODO(all): need this?
+  // We indeed need this line because of
+  // https://github.com/oxfordcontrol/osqp/blob/master/src/cs.c#L255
   A_indptr->push_back(ind_p);
 }
 
@@ -312,6 +312,18 @@ void PiecewiseJerkProblem::set_x_ref(const double weight_x_ref,
                                      std::vector<double> x_ref) {
   CHECK_EQ(x_ref.size(), num_of_knots_);
   weight_x_ref_ = weight_x_ref;
+  // set uniform weighting
+  weight_x_ref_vec_ = std::vector<double>(num_of_knots_, weight_x_ref);
+  x_ref_ = std::move(x_ref);
+  has_x_ref_ = true;
+}
+
+void PiecewiseJerkProblem::set_x_ref(std::vector<double> weight_x_ref_vec,
+                                     std::vector<double> x_ref) {
+  CHECK_EQ(x_ref.size(), num_of_knots_);
+  CHECK_EQ(weight_x_ref_vec.size(), num_of_knots_);
+  // set piecewise weighting
+  weight_x_ref_vec_ = std::move(weight_x_ref_vec);
   x_ref_ = std::move(x_ref);
   has_x_ref_ = true;
 }

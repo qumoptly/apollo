@@ -1,5 +1,7 @@
 load("//tools:cpplint.bzl", "cpplint")
 
+load("//tools:py_proto.bzl", "py_proto")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
@@ -18,12 +20,15 @@ cc_proto_library(
 
 proto_library(
     name = "camera_proto_lib",
-    srcs = [
-        "config.proto",
-    ],
+    srcs = ["config.proto"],
     deps = [
         "//modules/common/proto:header_proto_lib",
     ],
+)
+
+py_proto(
+    name = "config_pb2",
+    src = "config.proto",
 )
 
 cpplint()

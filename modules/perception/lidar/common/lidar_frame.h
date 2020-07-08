@@ -39,6 +39,8 @@ struct LidarFrame {
   double timestamp = 0.0;
   // lidar to world pose
   Eigen::Affine3d lidar2world_pose = Eigen::Affine3d::Identity();
+  // lidar to world pose
+  Eigen::Affine3d novatel2world_pose = Eigen::Affine3d::Identity();
   // hdmap struct
   std::shared_ptr<base::HdmapStruct> hdmap_struct = nullptr;
   // segmented objects
@@ -49,6 +51,8 @@ struct LidarFrame {
   base::PointIndices roi_indices;
   // point cloud non ground indices
   base::PointIndices non_ground_indices;
+  // secondary segmentor indices
+  base::PointIndices secondary_indices;
   // sensor info
   base::SensorInfo sensor_info;
   // reserve string
@@ -63,6 +67,7 @@ struct LidarFrame {
     }
     timestamp = 0.0;
     lidar2world_pose = Eigen::Affine3d::Identity();
+    novatel2world_pose = Eigen::Affine3d::Identity();
     if (hdmap_struct) {
       hdmap_struct->road_boundary.clear();
       hdmap_struct->road_polygons.clear();
@@ -73,6 +78,7 @@ struct LidarFrame {
     tracked_objects.clear();
     roi_indices.indices.clear();
     non_ground_indices.indices.clear();
+    secondary_indices.indices.clear();
   }
 
   void FilterPointCloud(base::PointCloud<base::PointF> *filtered_cloud,

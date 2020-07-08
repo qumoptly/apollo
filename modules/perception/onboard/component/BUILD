@@ -70,6 +70,7 @@ cc_library(
         "//modules/v2x/proto:v2x_traffic_light_proto",
         "@eigen",
     ],
+    alwayslink = True,
 )
 
 cc_binary(
@@ -87,6 +88,7 @@ cc_library(
         "radar_detection_component.cc",
         "recognition_component.cc",
         "segmentation_component.cc",
+        "detection_component.cc",
     ],
     hdrs = [
         "fusion_component.h",
@@ -95,6 +97,7 @@ cc_library(
         "radar_detection_component.h",
         "recognition_component.h",
         "segmentation_component.h",
+        "detection_component.h",
     ],
     copts = [
         '-DMODULE_NAME=\\"perception\\"',
@@ -169,6 +172,7 @@ cc_library(
         "//modules/transform/proto:transform_proto",
         "@eigen",
     ],
+    alwayslink = True,
 )
 
 cpplint()

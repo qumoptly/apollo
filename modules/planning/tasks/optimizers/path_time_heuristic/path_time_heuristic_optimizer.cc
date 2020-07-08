@@ -20,8 +20,6 @@
 
 #include "modules/planning/tasks/optimizers/path_time_heuristic/path_time_heuristic_optimizer.h"
 
-#include <vector>
-
 #include "modules/common/configs/vehicle_config_helper.h"
 #include "modules/common/vehicle_state/vehicle_state_provider.h"
 #include "modules/planning/common/planning_gflags.h"
@@ -34,21 +32,22 @@ namespace planning {
 
 using apollo::common::ErrorCode;
 using apollo::common::Status;
-using apollo::common::TrajectoryPoint;
-using apollo::planning_internal::STGraphDebug;
 
 PathTimeHeuristicOptimizer::PathTimeHeuristicOptimizer(const TaskConfig& config)
     : SpeedOptimizer(config) {
-  CHECK(config.has_dp_st_speed_config());
-  dp_st_speed_config_ = config.dp_st_speed_config();
-  // TODO(all): fix the name
-  SetName("DpStSpeedOptimizer");
+  ACHECK(config.has_speed_heuristic_optimizer_config());
+  speed_heuristic_optimizer_config_ = config.speed_heuristic_optimizer_config();
 }
 
 bool PathTimeHeuristicOptimizer::SearchPathTimeGraph(
     SpeedData* speed_data) const {
+  const auto& dp_st_speed_optimizer_config =
+      reference_line_info_->IsChangeLanePath()
+          ? speed_heuristic_optimizer_config_.lane_change_speed_config()
+          : speed_heuristic_optimizer_config_.default_speed_config();
+
   GriddedPathTimeGraph st_graph(
-      reference_line_info_->st_graph_data(), dp_st_speed_config_,
+      reference_line_info_->st_graph_data(), dp_st_speed_optimizer_config,
       reference_line_info_->path_decision()->obstacles().Items(), init_point_);
 
   if (!st_graph.Search(speed_data).ok()) {

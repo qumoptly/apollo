@@ -47,17 +47,21 @@ export default class OfflinePlaybackWebSocketEndpoint {
             }
             switch (message.type) {
                 case "GroundMetadata":
-                    RENDERER.updateGroundMetadata(this.serverUrl, message.data);
+                    RENDERER.updateGroundMetadata(message.data);
                     this.requestFrameCount(STORE.playback.recordId);
                     break;
                 case "FrameCount":
                     STORE.playback.setNumFrames(message.data);
                     if (STORE.playback.hasNext()) {
                         this.requestSimulationWorld(STORE.playback.recordId, STORE.playback.next());
+                        this.requestCheckPoints(STORE.playback.recordId, STORE.playback.mapId);
                     }
                     break;
                 case "RoutePath":
                     this.routingTime2Path[message.routingTime] = message.routePath;
+                    break;
+                case "CheckPoints":
+                    RENDERER.checkPoints.update(message.data);
                     break;
                 case "SimWorldUpdate":
                     this.checkMessage(message);
@@ -89,6 +93,10 @@ export default class OfflinePlaybackWebSocketEndpoint {
             console.log("WebSocket connection closed, close_code: " + event.code);
             this.initialize(params);
         };
+    }
+
+    setPointCloudWS() {
+        // Stub as offline version doesn't support point cloud
     }
 
     checkMessage(message) {
@@ -170,7 +178,15 @@ export default class OfflinePlaybackWebSocketEndpoint {
     requestFrameCount(recordId) {
         this.websocket.send(JSON.stringify({
             type: 'RetrieveFrameCount',
-            recordId: recordId,
+            recordId,
+        }));
+    }
+
+    requestCheckPoints(recordId, mapId) {
+        this.websocket.send(JSON.stringify({
+            type: 'RequestCheckPoints',
+            recordId,
+            mapId,
         }));
     }
 
@@ -178,8 +194,8 @@ export default class OfflinePlaybackWebSocketEndpoint {
         if (!(frameId in this.frameData)) {
             this.websocket.send(JSON.stringify({
                 type : "RequestSimulationWorld",
-                recordId: recordId,
-                frameId: frameId,
+                recordId,
+                frameId,
             }));
         } else {
             if (STORE.playback.isSeeking) {

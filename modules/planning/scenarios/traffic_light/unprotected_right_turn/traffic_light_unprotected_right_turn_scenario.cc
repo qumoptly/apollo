@@ -38,8 +38,7 @@ namespace planning {
 namespace scenario {
 namespace traffic_light {
 
-using hdmap::HDMapUtil;
-using perception::TrafficLight;
+using apollo::hdmap::HDMapUtil;
 
 void TrafficLightUnprotectedRightTurnScenario::Init() {
   if (init_) {
@@ -54,9 +53,9 @@ void TrafficLightUnprotectedRightTurnScenario::Init() {
   }
 
   const auto& traffic_light_status =
-      PlanningContext::Instance()->planning_status().traffic_light();
+      injector_->planning_context()->planning_status().traffic_light();
 
-  if (traffic_light_status.current_traffic_light_overlap_id_size() == 0) {
+  if (traffic_light_status.current_traffic_light_overlap_id().empty()) {
     AERROR << "Could not find traffic-light(s)";
     return;
   }
@@ -82,7 +81,8 @@ void TrafficLightUnprotectedRightTurnScenario::Init() {
 
 apollo::common::util::Factory<
     ScenarioConfig::StageType, Stage,
-    Stage* (*)(const ScenarioConfig::StageConfig& stage_config)>
+    Stage* (*)(const ScenarioConfig::StageConfig& stage_config,
+               const std::shared_ptr<DependencyInjector>& injector)>
     TrafficLightUnprotectedRightTurnScenario::s_stage_factory_;
 
 void TrafficLightUnprotectedRightTurnScenario::RegisterStages() {
@@ -91,29 +91,33 @@ void TrafficLightUnprotectedRightTurnScenario::RegisterStages() {
   }
   s_stage_factory_.Register(
       ScenarioConfig::TRAFFIC_LIGHT_UNPROTECTED_RIGHT_TURN_STOP,
-      [](const ScenarioConfig::StageConfig& config) -> Stage* {
-        return new TrafficLightUnprotectedRightTurnStageStop(config);
+      [](const ScenarioConfig::StageConfig& config,
+         const std::shared_ptr<DependencyInjector>& injector) -> Stage* {
+        return new TrafficLightUnprotectedRightTurnStageStop(config, injector);
       });
   s_stage_factory_.Register(
       ScenarioConfig::TRAFFIC_LIGHT_UNPROTECTED_RIGHT_TURN_CREEP,
-      [](const ScenarioConfig::StageConfig& config) -> Stage* {
-        return new TrafficLightUnprotectedRightTurnStageCreep(config);
+      [](const ScenarioConfig::StageConfig& config,
+         const std::shared_ptr<DependencyInjector>& injector) -> Stage* {
+        return new TrafficLightUnprotectedRightTurnStageCreep(config, injector);
       });
   s_stage_factory_.Register(
       ScenarioConfig::TRAFFIC_LIGHT_UNPROTECTED_RIGHT_TURN_INTERSECTION_CRUISE,
-      [](const ScenarioConfig::StageConfig& config) -> Stage* {
+      [](const ScenarioConfig::StageConfig& config,
+         const std::shared_ptr<DependencyInjector>& injector) -> Stage* {
         return new TrafficLightUnprotectedRightTurnStageIntersectionCruise(
-            config);
+            config, injector);
       });
 }
 
 std::unique_ptr<Stage> TrafficLightUnprotectedRightTurnScenario::CreateStage(
-    const ScenarioConfig::StageConfig& stage_config) {
+    const ScenarioConfig::StageConfig& stage_config,
+    const std::shared_ptr<DependencyInjector>& injector) {
   if (s_stage_factory_.Empty()) {
     RegisterStages();
   }
-  auto ptr = s_stage_factory_.CreateObjectOrNull(stage_config.stage_type(),
-                                                 stage_config);
+  auto ptr = s_stage_factory_.CreateObjectOrNull(
+      stage_config.stage_type(), stage_config, injector);
   if (ptr) {
     ptr->SetContext(&context_);
   }
